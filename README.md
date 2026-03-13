@@ -1,0 +1,1 @@
+python3 split_by_department.py
