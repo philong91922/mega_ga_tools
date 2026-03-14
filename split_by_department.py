@@ -13,13 +13,18 @@ import datetime
 # Lấy file đầu tiên từ thư mục input
 input_dir = os.path.join(os.path.dirname(__file__), 'input')
 files = [f for f in os.listdir(input_dir) if os.path.isfile(os.path.join(input_dir, f))]
+# print(f"Tìm thấy {len(files)} file trong thư mục input.")
+# exit()
+
 if not files:
     raise ValueError("Không có file nào trong thư mục input")
 files.sort()  # Sắp xếp theo thứ tự alphabet
 SRC = os.path.join(input_dir, files[0])
 
-OUT_DIR = os.path.join(os.path.dirname(__file__), 'output')
+# print(SRC)
+# exit()
 
+OUT_DIR = os.path.join(os.path.dirname(__file__), 'output')
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # --- Read source ---
@@ -42,6 +47,8 @@ for r in range(DATA_START, src_sheet.nrows):
 
 print(f"Tổng phòng ban: {len(dept_rows)}")
 print(f"Tổng dòng data: {sum(len(v) for v in dept_rows.values())}")
+
+# exit()
 
 def safe_filename(name):
     """Tạo tên file an toàn từ tên phòng ban."""
