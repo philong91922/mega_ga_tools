@@ -19,16 +19,17 @@ files.sort()  # Sắp xếp theo thứ tự alphabet
 SRC = os.path.join(input_dir, files[0])
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), 'output')
-SHEET_NAME = '20_TH_DK_TCT'
-DEPT_COL = 35        # AJ (0-based)
-HEADER_END = 38      # rows 0-38 are template/header
-DATA_START = 39      # data begins at row 39
 
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # --- Read source ---
 rb = xlrd.open_workbook(SRC, formatting_info=True)
+SHEET_NAME = rb.sheet_names()[0]  # Lấy sheet đầu tiên
 src_sheet = rb.sheet_by_name(SHEET_NAME)
+
+DEPT_COL = 35        # AJ (0-based)
+HEADER_END = 38      # rows 0-38 are template/header
+DATA_START = 39      # data begins at row 39
 
 # Collect data rows grouped by department
 dept_rows = {}  # {dept_name: [row_indices]}
