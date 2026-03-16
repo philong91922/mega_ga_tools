@@ -154,6 +154,10 @@ DEPT_COL = 35        # AJ (0-based)
 HEADER_END = 38      # rows 0-38 are template/header (0-based)
 DATA_START = 39      # data begins at row 39 (0-based)
 
+# DEPT_COL = 35        # AJ (0-based)
+# HEADER_END = 7      # rows 0-38 are template/header (0-based)
+# DATA_START = 8      # data begins at row 39 (0-based)
+
 # OpenPyXL is 1-based for rows/cols
 DEPT_COL_IDX = DEPT_COL + 1
 DATA_START_ROW = DATA_START + 1
