@@ -142,7 +142,17 @@ def _process_xls(SRC, dept_rows, input_ext, out_ext, src_sheet, src_max_col, src
         fname = safe_filename(dept_name) + out_ext
         out_path = os.path.join(OUT_DIR, fname)
         wb_new.save(out_path)
-        print(f"  ✓ {fname} ({len(rows)} dòng)")
+        
+        if IS_PDF:
+            pdf_fname = safe_filename(dept_name) + '.pdf'
+            pdf_path = os.path.join(OUT_DIR, pdf_fname)
+            if _convert_excel_to_pdf(out_path, pdf_path):
+                os.remove(out_path)  # Remove Excel file after successful conversion
+                print(f"  ✓ {pdf_fname} ({len(rows)} dòng)")
+            else:
+                print(f"  ✓ {fname} ({len(rows)} dòng)")
+        else:
+            print(f"  ✓ {fname} ({len(rows)} dòng)")
 
 
 # --- Read source ---
@@ -150,13 +160,20 @@ wb_src = _load_workbook_any(SRC)
 SHEET_NAME = wb_src.sheetnames[0]  # Lấy sheet đầu tiên
 src_sheet = wb_src[SHEET_NAME]
 
-DEPT_COL = 35        # AJ (0-based)
-HEADER_END = 38      # rows 0-38 are template/header (0-based)
-DATA_START = 39      # data begins at row 39 (0-based)
-
 # DEPT_COL = 35        # AJ (0-based)
-# HEADER_END = 7      # rows 0-38 are template/header (0-based)
-# DATA_START = 8      # data begins at row 39 (0-based)
+# HEADER_END = 38      # rows 0-38 are template/header (0-based)
+# DATA_START = 39      # data begins at row 39 (0-based)
+# IS_PDF = False        # If True, output PDF files instead of Excel (requires libreoffice)
+
+DEPT_COL = 35        # AJ (0-based)
+HEADER_END = 7      # rows 0-38 are template/header (0-based)
+DATA_START = 8      # data begins at row 39 (0-based)
+IS_PDF = False
+
+# DEPT_COL = 26        # AA (0-based)
+# HEADER_END = 5      # rows 0-38 are template/header (0-based)
+# DATA_START = 6      # data begins at row 39 (0-based)
+# IS_PDF = False
 
 # OpenPyXL is 1-based for rows/cols
 DEPT_COL_IDX = DEPT_COL + 1
@@ -180,6 +197,170 @@ print(f"Tổng dòng data: {sum(len(v) for v in dept_rows.values())}")
 def safe_filename(name):
     """Tạo tên file an toàn từ tên phòng ban."""
     return name.replace('/', '-').replace('\\', '-').replace(':', '-')
+
+
+def _get_vietnamese_font():
+    """Find and register a TrueType font that supports Vietnamese characters."""
+    try:
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+        
+        # Common font paths on macOS
+        font_paths = [
+            '/System/Library/Fonts/Arial.ttf',
+            '/System/Library/Fonts/Helvetica.ttc',
+            '/Library/Fonts/Arial.ttf',
+            '/Library/Fonts/DejaVuSans.ttf',
+            '/System/Library/Fonts/Tahoma.ttf',
+            '/System/Library/Fonts/Georgia.ttf',
+        ]
+        
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                try:
+                    pdfmetrics.registerFont(TTFont('VietFont', font_path))
+                    return 'VietFont'
+                except Exception:
+                    continue
+        
+        return 'Courier'  # Fallback to Courier if no suitable font found
+    except Exception:
+        return 'Courier'
+
+
+def _convert_excel_to_pdf(excel_path, pdf_path):
+    """Convert Excel file to PDF using Python libraries. Returns True if successful."""
+    try:
+        from reportlab.lib import pagesizes
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
+        from reportlab.lib.units import inch, cm
+        from reportlab.lib import colors
+        from openpyxl.utils import get_column_letter
+        
+        # Get Vietnamese-compatible font
+        font_name = _get_vietnamese_font()
+        
+        # Extract data from Excel based on file format
+        data = []
+        hidden_cols = set()  # Track which column indices are hidden
+        col_widths_original = {}  # Store original column widths from Excel
+        ext = os.path.splitext(excel_path)[1].lower()
+        
+        if ext == '.xls':
+            # Use xlrd for .xls files
+            rb = xlrd.open_workbook(excel_path, formatting_info=True)
+            sheet = rb.sheet_by_index(0)
+            
+            # Check for hidden columns and get column widths using sheet's colinfo_map
+            for col_idx in range(sheet.ncols):
+                colinfo = sheet.colinfo_map.get(col_idx) if hasattr(sheet, 'colinfo_map') else None
+                if colinfo:
+                    if colinfo.hidden:
+                        hidden_cols.add(col_idx)
+                    # Store width in twips (1/20 of a point), convert to cm
+                    col_widths_original[col_idx] = (colinfo.width / 20.0) * 0.0352778 if colinfo.width else 2.8
+                else:
+                    # Default width for Excel is approximately 8.43 characters = 2.8 cm
+                    col_widths_original[col_idx] = 2.8
+            
+            for row_idx in range(sheet.nrows):
+                row_data = []
+                for col_idx in range(sheet.ncols):
+                    if col_idx not in hidden_cols:  # Skip hidden columns
+                        cell = sheet.cell(row_idx, col_idx)
+                        row_data.append(str(cell.value) if cell.value is not None else '')
+                data.append(row_data)
+        else:
+            # Use openpyxl for .xlsx and other formats
+            from openpyxl import load_workbook
+            wb = load_workbook(excel_path, data_only=True)
+            ws = wb.active
+            
+            # Get list of hidden columns and column widths from column_dimensions
+            col_display_idx = 0  # Track visible column index
+            for col_idx in range(1, ws.max_column + 1):
+                col_letter = get_column_letter(col_idx)
+                col_dim = ws.column_dimensions.get(col_letter)
+                
+                if col_dim and col_dim.hidden:
+                    hidden_cols.add(col_idx - 1)
+                
+                # Width in openpyxl is in character units, convert to cm (1 char ≈ 0.21 cm)
+                if col_dim and col_dim.width:
+                    col_widths_original[col_idx - 1] = col_dim.width * 0.21
+                else:
+                    col_widths_original[col_idx - 1] = 2.55  # Default width
+            
+            for row in ws.iter_rows(values_only=True):
+                row_data = []
+                for col_idx, cell in enumerate(row):
+                    if col_idx not in hidden_cols:  # Skip hidden columns
+                        row_data.append(str(cell) if cell is not None else '')
+                data.append(row_data)
+        
+        if not data:
+            print(f"  ⚠ File Excel trống: {excel_path}")
+            return False
+        
+        # Create PDF with landscape orientation and smaller margins
+        pagesize = pagesizes.landscape(pagesizes.A4)
+        doc = SimpleDocTemplate(pdf_path, pagesize=pagesize, leftMargin=0.3*cm, 
+                               rightMargin=0.3*cm, topMargin=0.5*cm, bottomMargin=0.5*cm)
+        elements = []
+        
+        # Define table style
+        style = TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('FONTNAME', (0, 0), (-1, 0), font_name),
+            ('FONTSIZE', (0, 0), (-1, 0), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.black),
+            ('FONTNAME', (0, 1), (-1, -1), font_name),
+            ('FONTSIZE', (0, 1), (-1, -1), 5),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey]),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ])
+        
+        # Use all visible columns
+        table_data = data
+        
+        # Use original column widths from Excel, scaled proportionally
+        page_width = pagesize[0] - 0.6*cm  # Account for margins
+        
+        # Calculate visible column widths
+        col_widths = []
+        visible_col_idx = 0
+        for col_idx in range(sheet.ncols if ext == '.xls' else ws.max_column):
+            if col_idx not in hidden_cols:
+                width = col_widths_original.get(col_idx, 2.8)
+                col_widths.append(width * cm)
+        
+        # If total width exceeds page width, scale down proportionally
+        total_width = sum(col_widths)
+        if total_width > page_width:
+            scale_factor = page_width / total_width
+            col_widths = [w * scale_factor for w in col_widths]
+        
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(style)
+        elements.append(table)
+        
+        # Build PDF
+        doc.build(elements)
+        return True
+        
+    except ImportError as e:
+        print(f"  ⚠ Thiếu thư viện Python: {e}")
+        print(f"    Cài đặt bằng: pip install reportlab")
+        return False
+    except Exception as e:
+        print(f"  ⚠ Lỗi chuyển PDF: {e}")
+        return False
 
 
 def _copy_sheet(src, dst):
@@ -258,6 +439,16 @@ else:
         fname = safe_filename(dept_name) + out_ext
         out_path = os.path.join(OUT_DIR, fname)
         wb_new.save(out_path)
-        print(f"  ✓ {fname} ({len(rows)} dòng)")
+        
+        if IS_PDF:
+            pdf_fname = safe_filename(dept_name) + '.pdf'
+            pdf_path = os.path.join(OUT_DIR, pdf_fname)
+            if _convert_excel_to_pdf(out_path, pdf_path):
+                os.remove(out_path)  # Remove Excel file after successful conversion
+                print(f"  ✓ {pdf_fname} ({len(rows)} dòng)")
+            else:
+                print(f"  ✓ {fname} ({len(rows)} dòng)")
+        else:
+            print(f"  ✓ {fname} ({len(rows)} dòng)")
 
 print(f"\nHoàn tất! {len(dept_rows)} file đã lưu vào: {OUT_DIR}")
